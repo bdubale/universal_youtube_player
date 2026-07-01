@@ -1,22 +1,22 @@
-/// Preferred video quality when resolving a YouTube stream.
+/// Requested video quality when resolving a YouTube link.
 ///
-/// YouTube exposes many stream variants for a single video. The controller
-/// picks the muxed (video + audio combined) stream that best matches the
-/// requested quality, falling back to the closest available option.
+/// YouTube publishes each video in several separate streams. The controller
+/// maps the value you request to the closest available stream and falls back
+/// gracefully when an exact match is not offered.
 enum YoutubeVideoQuality {
-  /// Lowest available resolution — best for constrained bandwidth.
+  /// The lowest available resolution. Useful on metered or slow connections.
   low,
 
-  /// A balanced, widely-available resolution (typically 360p–480p muxed).
+  /// A middle resolution, typically around 360p to 480p.
   medium,
 
-  /// Highest available muxed resolution.
+  /// The highest resolution available as a single combined stream.
   high,
 
-  /// Highest resolution available, combining a video-only stream with a
-  /// separate audio track when no high-resolution muxed stream exists.
+  /// The highest resolution available overall.
   ///
-  /// Requires the underlying player to support an external audio track
-  /// (libmpv / media_kit does). Falls back to [high] when unsupported.
+  /// On desktop and mobile this pairs a video-only stream with a separate
+  /// audio track to reach resolutions above 720p. On the web, where a single
+  /// source URL is required, it behaves like [high].
   best,
 }

@@ -4,64 +4,83 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'youtube_player_controller.dart';
 import 'youtube_video_quality.dart';
 
-/// A cross-platform YouTube video player widget.
+/// A cross platform YouTube video player.
 ///
-/// Provide a [url] for the simple case — the widget owns and drives its own
-/// [UniversalYoutubeController] — or pass an existing [controller] when you
-/// need to drive playback yourself.
+/// Give the widget a [url] and it manages its own controller, or pass a
+/// [controller] you own and drive playback yourself. Exactly one of the two is
+/// required.
 ///
 /// ```dart
-/// // Simplest usage:
+/// // Self managed, the common case:
 /// UniversalYoutubePlayer(url: 'https://youtu.be/dQw4w9WgXcQ')
 ///
-/// // With your own controller:
+/// // With your own controller, for custom controls or shared state:
 /// UniversalYoutubePlayer(controller: myController)
 /// ```
+///
+/// The widget shows a loading indicator while the link resolves and an error
+/// view if it fails. Override [loadingBuilder], [placeholder] and
+/// [errorBuilder] to match your app.
 class UniversalYoutubePlayer extends StatefulWidget {
+  /// Creates a player.
+  ///
+  /// Provide either [url] or [controller], never both and never neither.
   const UniversalYoutubePlayer({
     super.key,
     this.url,
     this.controller,
     this.autoPlay = true,
     this.quality = YoutubeVideoQuality.high,
+    this.looping = false,
     this.aspectRatio = 16 / 9,
+    this.fit = BoxFit.contain,
+    this.backgroundColor = Colors.black,
     this.controls = true,
     this.placeholder,
     this.errorBuilder,
     this.loadingBuilder,
   }) : assert(
-          (url != null) ^ (controller != null),
-          'Provide exactly one of `url` or `controller`.',
-        );
+         (url == null) != (controller == null),
+         'Provide exactly one of url or controller.',
+       );
 
-  /// A YouTube link (any form) or bare video id to play. Mutually exclusive
-  /// with [controller].
+  /// A YouTube link or bare video id to play. Mutually exclusive with
+  /// [controller].
   final String? url;
 
-  /// An externally-owned controller. Mutually exclusive with [url]. When
-  /// supplied, the caller is responsible for calling `load` and `dispose`.
+  /// A controller you own and dispose yourself. Mutually exclusive with [url].
   final UniversalYoutubeController? controller;
 
-  /// Whether playback starts automatically once resolved. Only used when [url]
-  /// is provided.
+  /// Whether playback starts as soon as the link resolves. Only used when
+  /// [url] is set.
   final bool autoPlay;
 
-  /// Preferred quality. Only used when [url] is provided.
+  /// The quality to request. Only used when [url] is set.
   final YoutubeVideoQuality quality;
 
-  /// Aspect ratio of the video surface.
+  /// Whether the video repeats when it ends. Only used when [url] is set.
+  final bool looping;
+
+  /// The aspect ratio of the video surface.
   final double aspectRatio;
 
-  /// Whether to show the default media controls overlay.
+  /// How the video fills its surface.
+  final BoxFit fit;
+
+  /// The color painted behind the video.
+  final Color backgroundColor;
+
+  /// Whether to show the built in playback controls.
   final bool controls;
 
-  /// Widget shown before playback begins (behind the video surface).
+  /// A widget shown behind the video before playback begins. Falls back to a
+  /// plain colored surface.
   final Widget? placeholder;
 
-  /// Builds the widget shown when resolving or playback fails.
+  /// Builds the view shown when loading or playback fails.
   final Widget Function(BuildContext context, Object error)? errorBuilder;
 
-  /// Builds the widget shown while the link is being resolved.
+  /// Builds the view shown while the link is resolving.
   final Widget Function(BuildContext context)? loadingBuilder;
 
   @override
@@ -77,28 +96,26 @@ class _UniversalYoutubePlayerState extends State<UniversalYoutubePlayer> {
     super.initState();
     _ownsController = widget.controller == null;
     _controller = widget.controller ?? UniversalYoutubeController();
-    if (_ownsController) {
-      _controller.load(
-        widget.url!,
-        autoPlay: widget.autoPlay,
-        quality: widget.quality,
-      );
-    }
+    if (_ownsController) _loadFromUrl();
   }
 
   @override
   void didUpdateWidget(covariant UniversalYoutubePlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Reload when the widget owns the controller and the url changed.
-    if (_ownsController &&
-        widget.url != null &&
-        widget.url != oldWidget.url) {
-      _controller.load(
-        widget.url!,
-        autoPlay: widget.autoPlay,
-        quality: widget.quality,
-      );
+    if (_ownsController && widget.url != oldWidget.url && widget.url != null) {
+      _loadFromUrl();
     }
+  }
+
+  void _loadFromUrl() {
+    _controller
+        .load(
+          widget.url!,
+          autoPlay: widget.autoPlay,
+          quality: widget.quality,
+          looping: widget.looping,
+        )
+        .catchError((_) {});
   }
 
   @override
@@ -118,15 +135,17 @@ class _UniversalYoutubePlayerState extends State<UniversalYoutubePlayer> {
             case YoutubePlayerStatus.error:
               final error = _controller.error ?? 'Unknown error';
               return widget.errorBuilder?.call(context, error) ??
-                  _DefaultError(error: error);
+                  _ErrorView(error: error, background: widget.backgroundColor);
             case YoutubePlayerStatus.idle:
             case YoutubePlayerStatus.resolving:
               return widget.loadingBuilder?.call(context) ??
                   widget.placeholder ??
-                  const _DefaultLoading();
+                  _LoadingView(background: widget.backgroundColor);
             case YoutubePlayerStatus.ready:
               return Video(
                 controller: _controller.videoController,
+                fit: widget.fit,
+                fill: widget.backgroundColor,
                 controls: widget.controls
                     ? AdaptiveVideoControls
                     : NoVideoControls,
@@ -138,39 +157,46 @@ class _UniversalYoutubePlayerState extends State<UniversalYoutubePlayer> {
   }
 }
 
-class _DefaultLoading extends StatelessWidget {
-  const _DefaultLoading();
+class _LoadingView extends StatelessWidget {
+  const _LoadingView({required this.background});
+
+  final Color background;
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: Colors.black,
-      child: Center(
+    return ColoredBox(
+      color: background,
+      child: const Center(
         child: CircularProgressIndicator(color: Colors.white),
       ),
     );
   }
 }
 
-class _DefaultError extends StatelessWidget {
-  const _DefaultError({required this.error});
+class _ErrorView extends StatelessWidget {
+  const _ErrorView({required this.error, required this.background});
 
   final Object error;
+  final Color background;
 
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: Colors.black,
+      color: background,
       child: Center(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
+              const Icon(
+                Icons.error_outline,
+                color: Colors.redAccent,
+                size: 40,
+              ),
               const SizedBox(height: 8),
               Text(
-                'Could not play this video.\n$error',
+                'This video could not be played.\n$error',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white70),
               ),

@@ -1,5 +1,10 @@
-/// Lightweight metadata for a resolved YouTube video.
+/// Details about a resolved YouTube video.
+///
+/// A controller populates this as soon as it fetches the video page, before
+/// playback begins, so you can render a title or thumbnail while the stream
+/// loads.
 class YoutubeMetadata {
+  /// Creates metadata for a single video.
   const YoutubeMetadata({
     required this.videoId,
     required this.title,
@@ -9,26 +14,41 @@ class YoutubeMetadata {
     this.thumbnailUrl,
   });
 
-  /// The 11-character YouTube video id.
+  /// The eleven character YouTube video id, for example `dQw4w9WgXcQ`.
   final String videoId;
 
-  /// Human-readable video title.
+  /// The video title.
   final String title;
 
-  /// Channel / uploader name.
+  /// The name of the channel that published the video.
   final String author;
 
-  /// Whether this is a live broadcast.
+  /// Whether the video is a live broadcast.
   final bool isLive;
 
-  /// Total duration, or `null` for live streams / when unknown.
+  /// The total running time, or `null` for live broadcasts and videos whose
+  /// length could not be determined.
   final Duration? duration;
 
-  /// URL of a representative thumbnail, if available.
+  /// A URL for the video thumbnail, or `null` when none was reported.
   final String? thumbnailUrl;
 
   @override
+  bool operator ==(Object other) =>
+      other is YoutubeMetadata &&
+      other.videoId == videoId &&
+      other.title == title &&
+      other.author == author &&
+      other.isLive == isLive &&
+      other.duration == duration &&
+      other.thumbnailUrl == thumbnailUrl;
+
+  @override
+  int get hashCode =>
+      Object.hash(videoId, title, author, isLive, duration, thumbnailUrl);
+
+  @override
   String toString() =>
-      'YoutubeMetadata(videoId: $videoId, title: $title, author: $author, '
-      'isLive: $isLive, duration: $duration)';
+      'YoutubeMetadata(videoId: $videoId, title: $title, '
+      'author: $author, isLive: $isLive, duration: $duration)';
 }

@@ -1,8 +1,9 @@
-/// Play any YouTube video on every Flutter platform — Windows, macOS, Linux,
-/// ChromeOS, Android, iOS and web — using native libmpv playback.
+/// Play any YouTube video on every Flutter platform: Windows, macOS, Linux,
+/// ChromeOS, Android, iOS and the web.
 ///
-/// Call [UniversalYoutubePlayerBootstrap.ensureInitialized] once in `main()`
-/// before `runApp`:
+/// Call [UniversalYoutubePlayerBootstrap.ensureInitialized] once in `main`
+/// before `runApp`, then use [UniversalYoutubePlayer] or drive playback with a
+/// [UniversalYoutubeController].
 ///
 /// ```dart
 /// void main() {
@@ -11,8 +12,6 @@
 ///   runApp(const MyApp());
 /// }
 /// ```
-///
-/// Then drop in a player:
 ///
 /// ```dart
 /// UniversalYoutubePlayer(url: 'https://youtu.be/dQw4w9WgXcQ')
@@ -24,16 +23,18 @@ import 'package:media_kit/media_kit.dart';
 export 'src/youtube_metadata.dart';
 export 'src/youtube_player.dart';
 export 'src/youtube_player_controller.dart';
+export 'src/youtube_url.dart';
 export 'src/youtube_video_quality.dart';
 
-/// One-time initialization for the native media backend.
+/// One time setup for the native media backend.
 abstract final class UniversalYoutubePlayerBootstrap {
   static bool _initialized = false;
 
-  /// Initializes the underlying `media_kit` backend. Safe to call more than
-  /// once; only the first call has an effect. Must run after
-  /// `WidgetsFlutterBinding.ensureInitialized()` and before creating any
-  /// `UniversalYoutubeController` or `UniversalYoutubePlayer`.
+  /// Initializes the native backend used for playback.
+  ///
+  /// Call this after `WidgetsFlutterBinding.ensureInitialized` and before
+  /// creating a [UniversalYoutubeController] or [UniversalYoutubePlayer].
+  /// Calling it more than once is safe and has no additional effect.
   static void ensureInitialized() {
     if (_initialized) return;
     MediaKit.ensureInitialized();

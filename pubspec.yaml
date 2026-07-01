@@ -1,11 +1,19 @@
 name: universal_youtube_player
-description: "Play any YouTube video on every Flutter platform — Windows, macOS, Linux, ChromeOS, Android, iOS & web — using native libmpv playback."
+description: "Play YouTube videos on Windows, macOS, Linux, ChromeOS, Android, iOS, and web from one codebase, with native libmpv playback and no web view."
 version: 0.1.0
 homepage: https://github.com/alertus/universal_youtube_player
+repository: https://github.com/alertus/universal_youtube_player
+issue_tracker: https://github.com/alertus/universal_youtube_player/issues
+topics:
+  - youtube
+  - video
+  - player
+  - media-kit
+  - desktop
 
 environment:
   sdk: ^3.11.0
-  flutter: ">=1.17.0"
+  flutter: ">=3.10.0"
 
 dependencies:
   flutter:
