@@ -1,9 +1,9 @@
 name: universal_youtube_player
 description: "Play YouTube videos on Windows, macOS, Linux, ChromeOS, Android, iOS, and web from one codebase, with native libmpv playback and no web view."
 version: 0.1.0
-homepage: https://github.com/alertus/universal_youtube_player
-repository: https://github.com/alertus/universal_youtube_player
-issue_tracker: https://github.com/alertus/universal_youtube_player/issues
+homepage: https://github.com/bdubale/universal_youtube_player
+repository: https://github.com/bdubale/universal_youtube_player
+issue_tracker: https://github.com/bdubale/universal_youtube_player/issues
 topics:
   - youtube
   - video
