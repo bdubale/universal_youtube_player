@@ -1,12 +1,9 @@
 name: Build desktop
 
-# Builds the example app for all three desktop platforms.
-# Windows and Linux runners come with their native toolchains preinstalled,
-# so you can produce a Windows .exe without owning a Windows machine.
+# Verifies the example app compiles on all three desktop platforms.
+# Runs on pull requests; pushes to main are covered by the release workflow.
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 

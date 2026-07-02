@@ -1,0 +1,116 @@
+name: Release desktop
+
+# Builds the example app for Windows, macOS, and Linux, packages each into a
+# zip, and publishes them as downloadable assets on a GitHub Release.
+#
+# Push to main updates a rolling "continuous" prerelease.
+# Push a version tag (for example v0.2.0) publishes a normal release.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter config --enable-windows-desktop
+      - working-directory: example
+        run: flutter pub get
+      - working-directory: example
+        run: flutter build windows --release
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path example/build/windows/x64/runner/Release/* -DestinationPath universal-youtube-player-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: universal-youtube-player-windows.zip
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter config --enable-macos-desktop
+      - working-directory: example
+        run: flutter pub get
+      - working-directory: example
+        run: flutter build macos --release
+      - name: Package
+        run: |
+          cd example/build/macos/Build/Products/Release
+          zip -r -y "$GITHUB_WORKSPACE/universal-youtube-player-macos.zip" example.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: universal-youtube-player-macos.zip
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev libmpv-dev mpv zip
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter config --enable-linux-desktop
+      - working-directory: example
+        run: flutter pub get
+      - working-directory: example
+        run: flutter build linux --release
+      - name: Package
+        run: |
+          cd example/build/linux/x64/release/bundle
+          zip -r "$GITHUB_WORKSPACE/universal-youtube-player-linux.zip" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: universal-youtube-player-linux.zip
+
+  release:
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Decide release identity
+        id: meta
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=continuous" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "name=Continuous build (main)" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          files: dist/*.zip
+          body: |
+            Desktop demo builds of the universal_youtube_player example app.
+
+            - Windows: universal-youtube-player-windows.zip (unzip, run example.exe)
+            - macOS: universal-youtube-player-macos.zip (unsigned; right click the app and Open)
+            - Linux: universal-youtube-player-linux.zip (needs libmpv, run the example binary)
