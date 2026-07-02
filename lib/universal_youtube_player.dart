@@ -20,9 +20,11 @@ library;
 
 import 'package:media_kit/media_kit.dart';
 
+export 'src/youtube_client.dart';
 export 'src/youtube_metadata.dart';
 export 'src/youtube_player.dart';
 export 'src/youtube_player_controller.dart';
+export 'src/youtube_player_exception.dart';
 export 'src/youtube_url.dart';
 export 'src/youtube_video_quality.dart';
 

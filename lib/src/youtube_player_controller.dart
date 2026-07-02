@@ -3,7 +3,9 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import 'youtube_client.dart';
 import 'youtube_metadata.dart';
+import 'youtube_player_exception.dart';
 import 'youtube_url.dart';
 import 'youtube_video_quality.dart';
 
@@ -59,6 +61,7 @@ class UniversalYoutubeController extends ChangeNotifier {
     VideoControllerConfiguration videoControllerConfiguration =
         const VideoControllerConfiguration(),
     YoutubeExplode? youtubeExplode,
+    this.clients = defaultYoutubeClients,
   }) : _yt = youtubeExplode ?? YoutubeExplode(),
        _ownsYt = youtubeExplode == null,
        player = Player(configuration: playerConfiguration) {
@@ -67,6 +70,13 @@ class UniversalYoutubeController extends ChangeNotifier {
       configuration: videoControllerConfiguration,
     );
   }
+
+  /// The clients tried, in order, when [load] is not given its own list.
+  ///
+  /// Passing more than one adds resilience against YouTube's bot checks, since
+  /// a request refused for one client is retried with the next. Defaults to
+  /// [defaultYoutubeClients].
+  final List<YoutubeClient> clients;
 
   /// The `media_kit` player behind this controller.
   ///
@@ -85,6 +95,7 @@ class UniversalYoutubeController extends ChangeNotifier {
   YoutubeMetadata? _metadata;
   YoutubeVideoQuality _quality = YoutubeVideoQuality.high;
   String? _lastInput;
+  List<YoutubeClient>? _lastClients;
   bool _looping = false;
   double _volumeBeforeMute = 100;
   bool _muted = false;
@@ -159,11 +170,14 @@ class UniversalYoutubeController extends ChangeNotifier {
   /// bare video id. Set [autoPlay] to `false` to load without starting.
   /// [quality] selects the requested resolution. [startAt] seeks to a position
   /// before playback begins. [volume] and [muted] set the initial audio state,
-  /// and [looping] makes the video repeat.
+  /// and [looping] makes the video repeat. [clients] overrides the controller
+  /// wide [UniversalYoutubeController.clients] for this call, letting you trade
+  /// bot-check resilience for speed or the other way around.
   ///
-  /// Throws an [ArgumentError] if [urlOrVideoId] is not a valid YouTube link,
-  /// and rethrows any error raised while resolving or opening the stream after
-  /// exposing it through [status] and [error].
+  /// Throws an [ArgumentError] if [urlOrVideoId] is not a valid YouTube link.
+  /// Any failure while resolving or opening the stream is classified into a
+  /// [YoutubePlayerException], exposed through [status] and [error], and then
+  /// thrown.
   Future<void> load(
     String urlOrVideoId, {
     bool autoPlay = true,
@@ -172,6 +186,7 @@ class UniversalYoutubeController extends ChangeNotifier {
     double? volume,
     bool muted = false,
     bool looping = false,
+    List<YoutubeClient>? clients,
   }) async {
     final id = extractYoutubeVideoId(urlOrVideoId);
     if (id == null) {
@@ -183,8 +198,10 @@ class UniversalYoutubeController extends ChangeNotifier {
     }
 
     final videoId = VideoId(id);
+    final activeClients = clients ?? this.clients;
     final token = ++_loadToken;
     _lastInput = urlOrVideoId;
+    _lastClients = activeClients;
     _quality = quality;
     _error = null;
     _setStatus(YoutubePlayerStatus.resolving);
@@ -203,7 +220,12 @@ class UniversalYoutubeController extends ChangeNotifier {
       );
       notifyListeners();
 
-      final resolved = await _resolveStream(videoId, video.isLive, quality);
+      final resolved = await _resolveStream(
+        videoId,
+        video.isLive,
+        quality,
+        activeClients,
+      );
       if (_isStale(token)) return;
 
       await player.open(
@@ -224,9 +246,10 @@ class UniversalYoutubeController extends ChangeNotifier {
       _setStatus(YoutubePlayerStatus.ready);
     } catch (e) {
       if (_isStale(token)) return;
-      _error = e;
+      final mapped = _classify(e, videoId.value);
+      _error = mapped;
       _setStatus(YoutubePlayerStatus.error);
-      rethrow;
+      throw mapped;
     }
   }
 
@@ -234,6 +257,7 @@ class UniversalYoutubeController extends ChangeNotifier {
     VideoId videoId,
     bool isLive,
     YoutubeVideoQuality quality,
+    List<YoutubeClient> clients,
   ) async {
     if (isLive) {
       final hlsUrl = await _yt.videos.streamsClient.getHttpLiveStreamUrl(
@@ -242,7 +266,10 @@ class UniversalYoutubeController extends ChangeNotifier {
       return _ResolvedStream(videoUrl: hlsUrl);
     }
 
-    final manifest = await _yt.videos.streamsClient.getManifest(videoId);
+    final manifest = await _yt.videos.streamsClient.getManifest(
+      videoId,
+      ytClients: clients.map(_apiClientFor).toList(),
+    );
 
     if (quality == YoutubeVideoQuality.best &&
         !kIsWeb &&
@@ -294,6 +321,7 @@ class UniversalYoutubeController extends ChangeNotifier {
       startAt: resumeAt,
       looping: _looping,
       muted: _muted,
+      clients: _lastClients,
     );
   }
 
@@ -386,4 +414,65 @@ class _ResolvedStream {
 
   final String videoUrl;
   final String? audioUrl;
+}
+
+YoutubeApiClient _apiClientFor(YoutubeClient client) => switch (client) {
+  YoutubeClient.tv => YoutubeApiClient.tv,
+  YoutubeClient.ios => YoutubeApiClient.ios,
+  YoutubeClient.android => YoutubeApiClient.android,
+  YoutubeClient.androidVr => YoutubeApiClient.androidVr,
+  YoutubeClient.mediaConnect => YoutubeApiClient.mediaConnect,
+  YoutubeClient.web => YoutubeApiClient.safari,
+};
+
+YoutubePlayerException _classify(Object error, String videoId) {
+  if (error is YoutubePlayerException) return error;
+
+  final message = error is YoutubeExplodeException
+      ? error.message
+      : error.toString();
+  final lower = message.toLowerCase();
+
+  YoutubePlayerErrorKind kind;
+  if (error is VideoRequiresPurchaseException) {
+    kind = YoutubePlayerErrorKind.requiresPurchase;
+  } else if (_looksLikeBotCheck(lower)) {
+    kind = YoutubePlayerErrorKind.botCheck;
+  } else if (_looksGeoRestricted(lower)) {
+    kind = YoutubePlayerErrorKind.geoRestricted;
+  } else if (error is VideoUnavailableException) {
+    kind = YoutubePlayerErrorKind.unavailable;
+  } else if (_looksLikeNetwork(error)) {
+    kind = YoutubePlayerErrorKind.network;
+  } else if (error is StateError && lower.contains('no playable streams')) {
+    kind = YoutubePlayerErrorKind.noStreams;
+  } else if (error is VideoUnplayableException) {
+    kind = YoutubePlayerErrorKind.unavailable;
+  } else {
+    kind = YoutubePlayerErrorKind.unknown;
+  }
+
+  return YoutubePlayerException(kind, message, videoId: videoId, cause: error);
+}
+
+bool _looksLikeBotCheck(String message) =>
+    message.contains('confirm you') ||
+    message.contains('not a bot') ||
+    message.contains('sign in') ||
+    message.contains('403') ||
+    message.contains('429') ||
+    message.contains('too many requests');
+
+bool _looksGeoRestricted(String message) =>
+    message.contains('country') ||
+    message.contains('region') ||
+    message.contains('not available in');
+
+bool _looksLikeNetwork(Object error) {
+  final name = error.runtimeType.toString().toLowerCase();
+  return name.contains('socket') ||
+      name.contains('timeout') ||
+      name.contains('httpexception') ||
+      name.contains('clientexception') ||
+      name.contains('connection');
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import 'youtube_player_controller.dart';
+import 'youtube_player_exception.dart';
 import 'youtube_video_quality.dart';
 
 /// A cross platform YouTube video player.
@@ -181,6 +182,9 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final message = error is YoutubePlayerException
+        ? (error as YoutubePlayerException).hint
+        : 'This video could not be played.';
     return ColoredBox(
       color: background,
       child: Center(
@@ -196,7 +200,7 @@ class _ErrorView extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'This video could not be played.\n$error',
+                message,
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white70),
               ),

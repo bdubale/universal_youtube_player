@@ -28,7 +28,7 @@ Add the dependency:
 
 ```yaml
 dependencies:
-  universal_youtube_player: ^0.1.0
+  universal_youtube_player: ^0.2.0
 ```
 
 Initialize the native backend once, before `runApp`:
@@ -185,6 +185,69 @@ Available streams: `positionStream`, `durationStream`, `bufferStream`,
 
 Live videos always use the HLS playlist, regardless of the requested quality.
 
+## Regions, VPNs, and bot checks
+
+Because streams are resolved by talking to YouTube's internal API, YouTube's
+abuse checks apply. On a VPN or a datacenter IP, or from some regions, YouTube
+may refuse the request or return a video that has no playable stream.
+
+To get around this, the controller tries several YouTube clients in order and
+keeps the first that resolves. A request refused for one client often succeeds
+with another. The list is configurable:
+
+```dart
+// On the controller (applies to every load):
+final controller = UniversalYoutubeController(
+  clients: [YoutubeClient.ios, YoutubeClient.tv, YoutubeClient.androidVr],
+);
+
+// Or per load:
+await controller.load(url, clients: [YoutubeClient.tv]);
+```
+
+The default, `defaultYoutubeClients`, favors resilience over speed. Passing a
+single client is faster but easier to block.
+
+If resolution still fails, the controller does not throw a raw error. It throws
+a `YoutubePlayerException` classified by `YoutubePlayerErrorKind`
+(`unavailable`, `geoRestricted`, `requiresPurchase`, `botCheck`, `noStreams`,
+`network`, `unknown`), with an `isRetryable` flag and a user-facing `hint`:
+
+```dart
+try {
+  await controller.load(url);
+} on YoutubePlayerException catch (e) {
+  if (e.kind == YoutubePlayerErrorKind.botCheck) {
+    // Often a VPN or datacenter IP. Suggest a residential connection or retry.
+  }
+  showSnackBar(e.hint);
+}
+```
+
+The same exception is available as `controller.error` after a failed load, and
+the widget's default error view shows its `hint`.
+
+For extra control you can also route the resolver's HTTP through a proxy by
+injecting your own `YoutubeExplode`:
+
+```dart
+import 'dart:io';
+import 'package:http/io_client.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+
+final controller = UniversalYoutubeController(
+  youtubeExplode: YoutubeExplode(
+    YoutubeHttpClient(
+      IOClient(HttpClient()..findProxy = (_) => 'PROXY host:8080'),
+    ),
+  ),
+);
+```
+
+Note this proxies only the resolving step. The video bytes are fetched by the
+player itself, so a proxy helps with refused API requests and region checks but
+not with a CDN that blocks the playback IP.
+
 ## Widget reference
 
 `UniversalYoutubePlayer` takes either a `url` or a `controller`, never both.
@@ -237,8 +300,10 @@ to check that platform.
 ## How it works
 
 1. The controller parses the link and fetches the video page with
-   youtube_explode_dart. This gives it the title, author, and the list of
-   available streams.
+   youtube_explode_dart, impersonating one of YouTube's official app clients.
+   It tries the configured clients in order until one returns playable streams,
+   which is what gets past most bot checks. This gives it the title, author,
+   and the list of available streams.
 2. It picks a stream that matches the requested quality. For a live video it
    uses the HLS playlist instead.
 3. It hands the stream URL to media_kit, which decodes and renders it through

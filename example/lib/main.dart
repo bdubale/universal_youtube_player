@@ -84,7 +84,10 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 16),
               PlayerControls(controller: _controller),
               const SizedBox(height: 16),
-              MetadataCard(controller: _controller),
+              MetadataCard(
+                controller: _controller,
+                onRetry: () => _load(_urlField.text),
+              ),
             ],
           ),
         ),
@@ -366,15 +369,47 @@ class _SettingsRow extends StatelessWidget {
 }
 
 class MetadataCard extends StatelessWidget {
-  const MetadataCard({super.key, required this.controller});
+  const MetadataCard({
+    super.key,
+    required this.controller,
+    required this.onRetry,
+  });
 
   final UniversalYoutubeController controller;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        final error = controller.error;
+        if (controller.status == YoutubePlayerStatus.error) {
+          final kind = error is YoutubePlayerException
+              ? error.kind.name
+              : 'error';
+          final hint = error is YoutubePlayerException
+              ? error.hint
+              : 'The video could not be played.';
+          final retryable =
+              error is YoutubePlayerException && error.isRetryable;
+          return Card(
+            color: Theme.of(context).colorScheme.errorContainer,
+            child: ListTile(
+              leading: const Icon(Icons.error, color: Colors.red),
+              title: Text('Playback failed ($kind)'),
+              subtitle: Text(hint),
+              trailing: retryable
+                  ? TextButton.icon(
+                      onPressed: onRetry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    )
+                  : null,
+            ),
+          );
+        }
+
         final meta = controller.metadata;
         return Card(
           child: ListTile(
